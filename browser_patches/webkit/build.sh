@@ -80,6 +80,10 @@ elif [[ "$(uname)" == "Linux" ]]; then
     build_wpe
   fi
 elif [[ "$(uname)" == MINGW* ]]; then
+  unset EXEPATH
+  unset MINGW_PREFIX
+  unset MSYSTEM_PREFIX
+  unset ORIGINAL_PATH
   /c/Windows/System32/cmd.exe "/c $(cygpath -w "${SCRIPT_FOLDER}"/buildwin.bat)"
 else
   echo "ERROR: cannot upload on this platform!" 1>&2
