@@ -36,6 +36,33 @@ function maybe_cmd {
   fi
 }
 
+update_base_revision() {
+    local browser="$1"
+    local base_revision="$2"
+
+    sed -i -r "s|^BASE_REVISION=\"[^\"]+\"$|BASE_REVISION=\"$base_revision\"|" "./$browser/UPSTREAM_CONFIG.sh"
+}
+
+apply_patch_failsafe() {
+    set +e;
+    git apply --3way --whitespace=nowarn "$PATCHES_PATH"/*
+    if [[ "$?" -ne 0 ]]; then
+        echo -e "\033[31mWARNING\033[m: Patch apply failed!"
+        dump_conflicts
+    fi
+    set -e;
+}
+
+dump_conflicts() {
+    if [[ -f "$CHECKOUT_PATH/conflicts" ]]; then
+        rm -rf  "$CHECKOUT_PATH/conflicts"
+    fi
+    pushd .
+    cd "$CHECKOUT_PATH"
+    git status | grep -i "both modified:" | cut -d : -f2 | tr -d " " | sort -u > conflicts
+    popd
+}
+
 function prepare_chromium_checkout {
   cd "${SCRIPT_PATH}"
 
@@ -72,6 +99,11 @@ function prepare_chromium_checkout {
   maybe_cmd gclient sync -D --with_branch_heads
 }
 
+if [[ -n "$2" ]]; then
+    update_base_revision "$1" "$2"
+    APPLY_PATCH_FAILSAFE=1
+fi
+
 # FRIENDLY_CHECKOUT_PATH is used only for logging.
 FRIENDLY_CHECKOUT_PATH="";
 CHECKOUT_PATH=""
@@ -101,6 +133,7 @@ elif [[ ("$1" == "firefox") || ("$1" == "firefox/") || ("$1" == "ff") ]]; then
   PATCHES_PATH="$PWD/firefox/patches"
   FIREFOX_EXTRA_FOLDER_PATH="$PWD/firefox/juggler"
   BUILD_NUMBER=$(head -1 "$PWD/firefox/BUILD_NUMBER")
+
   source "./firefox/UPSTREAM_CONFIG.sh"
 elif [[ ("$1" == "firefox-beta") || ("$1" == "ff-beta") ]]; then
   # NOTE: firefox-beta re-uses firefox checkout.
@@ -220,7 +253,15 @@ if git show-ref --verify --quiet refs/heads/playwright-build; then
 fi
 git checkout -b playwright-build
 echo "-- applying patches"
-git apply --index --whitespace=nowarn "$PATCHES_PATH"/*
+if [[ -n "$APPLY_PATCH_FAILSAFE" ]]; then
+    apply_patch_failsafe "$1"
+else
+    git apply --index --whitespace=nowarn "$PATCHES_PATH"/*
+    if [[ "$?" -ne 0 ]]; then
+        echo -e "\033[31mWARNING\033[m: Prepare checkout failed!"
+        echo "Trying to apply patch manually..."
+    fi
+fi
 
 if [[ ! -z "${WEBKIT_EXTRA_FOLDER_PATH}" ]]; then
   echo "-- adding WebKit embedders"
